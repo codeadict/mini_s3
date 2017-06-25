@@ -8,3 +8,5 @@ ebin/*.app
 .eunit
 /.concrete/DEV_MODE
 .rebar
+.idea
+rebar3

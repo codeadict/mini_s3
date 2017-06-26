@@ -921,6 +921,7 @@ make_authorization(AccessKeyId, SecretKey, Method, ContentMD5, ContentType, Date
 make_authorization_v4(AccessKeyId, SecretKey, Method, ContentMD5, ContentType, Date, AmzHeaders,
     Host, Resource, Subresource) ->
   DateOnly = string:left(Date, 8),
+  Region = get_aws_region_from_host(Host),
   Scope = [DateOnly, $/, Region, $/, Resource, "/aws4_request"].
 
 default_config() ->
@@ -950,4 +951,13 @@ get_env(Atom, Env)->
         Value ->
           Value
       end
+  end.
+
+
+get_aws_region_from_host(Host) ->
+  case string:tokens(Host, ".") of
+    [_, Value, _, _ | _Rest] ->
+      Value;
+    _ ->
+      "us-east-1"
   end.

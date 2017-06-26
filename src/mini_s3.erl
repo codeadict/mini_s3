@@ -917,8 +917,17 @@ make_authorization(AccessKeyId, SecretKey, Method, ContentMD5, ContentType, Date
     Signature = base64:encode(crypto:hmac(sha, SecretKey, StringToSign)),
     {StringToSign, ["AWS ", AccessKeyId, $:, Signature]}.
 
+
+make_authorization_v4(AccessKeyId, SecretKey, Method, ContentMD5, ContentType, Date, AmzHeaders,
+    Host, Resource, Subresource) ->
+  DateOnly = string:left(Date, 8),
+  Scope = [DateOnly, $/, Region, $/, Resource, "/aws4_request"].
+
 default_config() ->
-    Defaults =  envy:get(mini_s3, s3_defaults, list),
+    Defaults = case get_env(mini_s3, s3_defaults) of
+               Def when is_list(Def) -> Def;
+               _ -> []
+               end,
     case proplists:is_defined(key_id, Defaults) andalso
         proplists:is_defined(secret_access_key, Defaults) of
         true ->
@@ -929,3 +938,16 @@ default_config() ->
         false ->
             throw({error, missing_s3_defaults})
     end.
+
+get_env(Atom, Env)->
+  case application:get_env(Atom) of
+    {ok, Value} ->
+      Value;
+    undefined ->
+      case os:getenv(Env) of
+        false ->
+          error;
+        Value ->
+          Value
+      end
+  end.

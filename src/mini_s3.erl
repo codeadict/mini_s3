@@ -118,25 +118,25 @@ manual_start() ->
 
 new(AccessKeyID, SecretAccessKey) ->
     #config{
-     access_key_id=AccessKeyID,
-     secret_access_key=SecretAccessKey}.
+       access_key_id=AccessKeyID,
+       secret_access_key=SecretAccessKey}.
 
 -spec new(string(), string(), string()) -> config().
 
 new(AccessKeyID, SecretAccessKey, Host) ->
     #config{
-     access_key_id=AccessKeyID,
-     secret_access_key=SecretAccessKey,
-     s3_url=Host}.
+       access_key_id=AccessKeyID,
+       secret_access_key=SecretAccessKey,
+       s3_url=Host}.
 
 -spec new(string(), string(), string(), bucket_access_type()) -> config().
 
 new(AccessKeyID, SecretAccessKey, Host, BucketAccessType) ->
     #config{
-     access_key_id=AccessKeyID,
-     secret_access_key=SecretAccessKey,
-     s3_url=Host,
-     bucket_access_type=BucketAccessType}.
+       access_key_id=AccessKeyID,
+       secret_access_key=SecretAccessKey,
+       s3_url=Host,
+       bucket_access_type=BucketAccessType}.
 
 
 
@@ -415,13 +415,13 @@ expiration_time({TimeToLive, Interval}) ->
     %% How many seconds are we into today?
     TodayOffset = NowSecs - MidnightSecs,
     Buffer = case (TodayOffset + Interval) >= ?DAY of
-        %% true if we're in the day's last interval, don't let it spill into tomorrow
-        true ->
-            ?DAY - TodayOffset;
-        %% false means this interval is bounded by today
-        _ ->
-            Interval - (TodayOffset rem Interval)
-    end,
+                 %% true if we're in the day's last interval, don't let it spill into tomorrow
+                 true ->
+                     ?DAY - TodayOffset;
+                 %% false means this interval is bounded by today
+                 _ ->
+                     Interval - (TodayOffset rem Interval)
+             end,
     NowSecs + Buffer - ?EPOCH + TimeToLive;
 expiration_time(TimeToLive) ->
     Now = calendar:datetime_to_gregorian_seconds(mini_s3:universaltime()),
@@ -484,8 +484,8 @@ s3_url(Method, BucketName, Key, Lifetime, RawHeaders,
     CanonicalizedResource = ms3_http:url_encode_loose(Path),
 
     {_StringToSign, Signature} = mini_s3:make_signed_url_authorization(SecretKey, Method,
-                                                               CanonicalizedResource,
-                                                               Expires, RawHeaders),
+                                                                       CanonicalizedResource,
+                                                                       Expires, RawHeaders),
 
     RequestURI = iolist_to_binary([
                                    format_s3_uri(Config, ""), CanonicalizedResource,
@@ -897,7 +897,7 @@ s3_request(Config = #config{access_key_id=AccessKey,
                 BadStatus ->
                     erlang:error({aws_error, {http_error, BadStatus,
                                               {ResponseHeaders, ResponseBody}}})
-                end;
+            end;
         {error, Error} ->
             erlang:error({aws_error, {socket_error, Error}})
     end.
@@ -917,17 +917,42 @@ make_authorization(AccessKeyId, SecretKey, Method, ContentMD5, ContentType, Date
     Signature = base64:encode(crypto:hmac(sha, SecretKey, StringToSign)),
     {StringToSign, ["AWS ", AccessKeyId, $:, Signature]}.
 
+%% http://docs.aws.amazon.com/general/latest/gr/signature-version-4.html
 
 make_authorization_v4(AccessKeyId, SecretKey, Method, ContentMD5, ContentType, Date, AmzHeaders,
-    Host, Resource, Subresource) ->
-  DateOnly = string:left(Date, 8),
-  Region = get_aws_region_from_host(Host),
-  Scope = [DateOnly, $/, Region, $/, Resource, "/aws4_request"].
+                      Host, Resource, Subresource) ->
+    DateOnly = string:left(Date, 8),
+    Region = get_aws_region_from_host(Host),
+    CanonizedAmzHeaders =
+        [[Name, $:, Value, $\n] || {Name, Value} <- lists:sort(AmzHeaders)],
+
+    CanonicalRequest = [string:to_upper(atom_to_list(Method)), $\n,
+                        CanonizedAmzHeaders],
+    HashedCanonicalRequest = string:to_lower(hmac:hexlify(crypto:hmac(sha256, CanonicalRequest))),
+    Scope = [DateOnly, $/, Region, $/, Resource, "/aws4_request"],
+    StringToSign = ["AWS4-HMAC-SHA256", "\n",
+                    Date, "\n",
+                    Scope, "\n",
+                    HashedCanonicalRequest],
+    Secret = ["AWS4", SecretKey],
+    DateHash = crypto:hmac(sha256, Secret, DateOnly),
+    RegionHash = crypto:hmac(sha256, DateHash, Region),
+    ServiceHash = crypto:hmac(sha256, Region, Resource),
+    Key = crypto:hmac(sha256, ServiceHash, "aws4_request"),
+    Signature = string:to_lower(hmac:hexlify(crypto:hmac(sha256, Key, StringToSign))),
+    Credential = [AccessKeyId, $/] ++ Scope,
+    iolist_to_binary(
+      ["AWS4-HMAC-SHA256 ",
+       "Credential=", Credential, ", ",
+       "SignedHeaders=", string:join([string:to_lower(K) || {K, _} <- lists:sort(AmzHeaders)], ";"),
+        ", ",
+       "Signature=", Signature]).
+
 
 default_config() ->
     Defaults = case get_env(mini_s3, s3_defaults) of
-               Def when is_list(Def) -> Def;
-               _ -> []
+                   Def when is_list(Def) -> Def;
+                   _ -> []
                end,
     case proplists:is_defined(key_id, Defaults) andalso
         proplists:is_defined(secret_access_key, Defaults) of
@@ -940,24 +965,26 @@ default_config() ->
             throw({error, missing_s3_defaults})
     end.
 
+
+%% @private
 get_env(Atom, Env)->
-  case application:get_env(Atom) of
-    {ok, Value} ->
-      Value;
-    undefined ->
-      case os:getenv(Env) of
-        false ->
-          error;
-        Value ->
-          Value
-      end
-  end.
+    case application:get_env(Atom) of
+        {ok, Value} ->
+            Value;
+        undefined ->
+            case os:getenv(Env) of
+                false ->
+                    error;
+                Value ->
+                    Value
+            end
+    end.
 
-
+%% @private
 get_aws_region_from_host(Host) ->
-  case string:tokens(Host, ".") of
-    [_, Value, _, _ | _Rest] ->
-      Value;
-    _ ->
-      "us-east-1"
-  end.
+    case string:tokens(Host, ".") of
+        [_, Value, _, _ | _Rest] ->
+            Value;
+        _ ->
+            "us-east-1"
+    end.
